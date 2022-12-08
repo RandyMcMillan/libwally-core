@@ -68,6 +68,8 @@ extern "C" {
 #define WALLY_TX_PEGIN_FLAG (1 << 30)
 #define WALLY_TX_INDEX_MASK 0x3fffffff
 
+#define WALLY_NO_CODESEPARATOR 0xffffffff /* No BIP342 code separator position */
+
 struct wally_map;
 #ifdef SWIG
 struct wally_tx_input;
@@ -681,13 +683,13 @@ WALLY_CORE_API int wally_tx_get_btc_signature_hash(
  *
  * :param tx: The transaction to generate the signature hash from.
  * :param index: The input index of the input being signed for.
- * :param scripts: Map of input index to (unprefixed) scriptCodes for each input.
+ * :param scripts: Map of input index to (unprefixed) scriptCodes for each input in ``tx``.
  * :param values: The value in satoshi for each input in ``tx``.
  * :param num_values: The number of elements in ``values``.
  * :param tapleaf_script: BIP342 tapscript being spent.
- * :param tapleaf_script_len: length of tapscript being spent.
+ * :param tapleaf_script_len: Length of ``tapleaf_script`` in bytes.
  * :param key_version: Version of pubkey in tapscript. Must be set to 0x00 or 0x01.
- * :param codesep_position: BIP342 codeseperator position.
+ * :param codesep_position: BIP342 codeseparator position or ``WALLY_NO_CODESEPARATOR`` if none.
  * :param annex: BIP341 annex, or NULL if none.
  * :param annex_len: Length of ``annex`` in bytes.
  * :param sighash: ``WALLY_SIGHASH_`` flags specifying the type of signature desired.

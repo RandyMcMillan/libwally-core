@@ -51,8 +51,8 @@ struct tx_serialize_opts
     const struct wally_map *scripts; /* Output scripts for BIP341/342 sha_scriptpubkeys  */
     const unsigned char *tapleaf_script; /* Executed BIP342 tapscript */
     size_t tapleaf_script_len;       /* Length of executed tapscript */
-    uint32_t key_version;             /* BIP342 key version */
-    uint32_t codesep_position;       /* BIP342 codeseperation position */
+    uint32_t key_version;            /* BIP342 key version */
+    uint32_t codesep_position;       /* BIP342 codeseparator position */
     const unsigned char *annex;      /* Annex data to be put under sighash */
     size_t annex_len;                /* Length of sighash data, including 0x50 prefix */
 };
@@ -3097,12 +3097,12 @@ static int tx_get_signature_hash(const struct wally_tx *tx,
     unsigned char buff[TX_STACK_SIZE], *buff_p = buff;
     size_t n, n2;
     size_t is_elements = 0;
+    const bool is_bip143 = (flags & WALLY_TX_FLAG_USE_WITNESS) ? true : false;
     const bool is_bip341 = false, have_extensions = false;
     int ret;
     const struct tx_serialize_opts opts = {
         sighash, tx_sighash, index, script, script_len, satoshi,
-        (flags & WALLY_TX_FLAG_USE_WITNESS) ? true : false,
-        value, value_len, is_bip341, have_extensions, NULL, 0, NULL,
+        is_bip143, value, value_len, is_bip341, have_extensions, NULL, 0, NULL,
         NULL, 0, 0, 0, NULL, 0
     };
 
@@ -3153,27 +3153,23 @@ fail:
     return ret;
 }
 
-static int tx_get_taproot_signature_hash(const struct wally_tx *tx,
-                                 size_t index,
-                                 const struct wally_map *scripts,
-                                 const uint64_t *values, size_t num_values,
-                                 const unsigned char *tapleaf_script,
-                                 size_t tapleaf_script_len,
-                                 uint32_t key_version,
-                                 uint32_t codesep_position,
-                                 uint32_t sighash, uint32_t tx_sighash,
-                                 const unsigned char *annex, size_t annex_len,
-                                 unsigned char *bytes_out,
-                                 size_t len)
+static int tx_get_taproot_signature_hash(
+    const struct wally_tx *tx, size_t index, const struct wally_map *scripts,
+    const uint64_t *values, size_t num_values,
+    const unsigned char *tapleaf_script, size_t tapleaf_script_len,
+    uint32_t key_version, uint32_t codesep_position,
+    uint32_t sighash, uint32_t tx_sighash,
+    const unsigned char *annex, size_t annex_len,
+    unsigned char *bytes_out, size_t len)
 {
     unsigned char buff[TX_STACK_SIZE], *buff_p = buff;
     size_t n, n2;
-    size_t is_elements = 0;
+    size_t is_elements = 0, expected_size = 0;
     int ret;
-    size_t expected_size = 0;
+    const bool is_bip143 = false, is_bip341 = true, have_extensions = tapleaf_script != NULL;
     const struct tx_serialize_opts opts = {
         sighash, tx_sighash, index, NULL, 0, values[index],
-        false, NULL, 0, true /* bip341 */, tapleaf_script != NULL /* tapscript_extensions */, values, num_values, scripts,
+        is_bip143, NULL, 0, is_bip341, have_extensions, values, num_values, scripts,
         tapleaf_script, tapleaf_script_len, key_version, codesep_position, annex, annex_len
     };
 

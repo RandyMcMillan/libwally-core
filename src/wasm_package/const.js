@@ -109,6 +109,7 @@ export const WALLY_NETWORK_BITCOIN_TESTNET = 0x02; /** Bitcoin testnet */
 export const WALLY_NETWORK_LIQUID = 0x03; /** Liquid v1 */
 export const WALLY_NETWORK_LIQUID_REGTEST = 0x04; /** Liquid v1 regtest */
 export const WALLY_NETWORK_LIQUID_TESTNET = 0x05; /** Liquid v1 testnet */
+export const WALLY_NO_CODESEPARATOR = 0xffffffff; /* No BIP342 code separator position */
 export const WALLY_OK = 0; /** Success */
 export const WALLY_PSBT_EXTRACT_NON_FINAL = 0x1; /* Extract without final scriptsig and witness */
 export const WALLY_PSBT_FLAG_NON_FINAL = 0x1;
