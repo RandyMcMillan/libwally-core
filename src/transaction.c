@@ -3185,9 +3185,9 @@ static int tx_get_taproot_signature_hash(
     uint32_t sighash, uint32_t flags,
     unsigned char *bytes_out, size_t len)
 {
-    unsigned char buff[TX_STACK_SIZE], *buff_p = buff;
-    size_t n, n2;
-    size_t is_elements = 0, expected_size = 0;
+    unsigned char buff[TX_STACK_SIZE];
+    size_t n;
+    size_t is_elements = 0, tx_size;
     int ret;
     const bool is_bip143 = false, is_bip341 = true, have_extensions = tapleaf_script != NULL;
     const struct tx_serialize_opts opts = {
@@ -3199,33 +3199,27 @@ static int tx_get_taproot_signature_hash(
     if (flags)
         return WALLY_EINVAL;
 
-    /* Serialize sighash data into buffer. It allocates onto heap when it needs a larger
-     * buffer to compute hash sub-parts.
-     */
-    n = sizeof(buff);
-    if ((ret = tx_to_bytes(tx, &opts, 0, buff_p, n, &n2, is_elements != 0)) != WALLY_OK)
+    ret = tx_to_bytes(tx, &opts, 0, buff, sizeof(buff), &n, is_elements != 0);
+    if (ret != WALLY_OK)
         goto fail;
 
-    expected_size = 174 - (!!(opts.sighash & WALLY_SIGHASH_ANYONECANPAY) * 49) -
+    tx_size = 174 - (!!(opts.sighash & WALLY_SIGHASH_ANYONECANPAY) * 49) -
         (((opts.sighash & WALLY_SIGHASH_MASK) == WALLY_SIGHASH_NONE) * 32) + (annex ? 1 : 0)*32;
-    expected_size += 1; /* sighash epoch which goes prior to SigMsg for usages of TapSighash */
+    tx_size += 1; /* sighash epoch which goes prior to SigMsg for usages of TapSighash */
     if (tapleaf_script) {
         /* tapleaf_hash + key_version + codesep_position */
-        expected_size += 32 + 1 + 4;
+        tx_size += 32 + 1 + 4;
     }
 
     /* FIXME No size checks for BIP118 yet */
-    if (key_version == 0x00 && n2 != expected_size) {
+    if (key_version == 0x00 && n != tx_size) {
         ret = WALLY_ERROR;
     } else {
-        ret = wally_bip340_tagged_hash(buff_p, n2, "TapSighash", bytes_out, len);
+        ret = wally_bip340_tagged_hash(buff, n, "TapSighash", bytes_out, len);
     }
 
 fail:
-    if (buff_p != buff)
-        clear_and_free(buff_p, n);
-    else
-        wally_clear(buff, sizeof(buff));
+    wally_clear(buff, sizeof(buff));
     return ret;
 }
 
