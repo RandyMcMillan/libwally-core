@@ -3153,13 +3153,36 @@ fail:
     return ret;
 }
 
+int wally_tx_get_signature_hash(const struct wally_tx *tx,
+                                size_t index,
+                                const unsigned char *script, size_t script_len,
+                                const unsigned char *extra, size_t extra_len,
+                                uint32_t extra_offset, uint64_t satoshi,
+                                uint32_t sighash, uint32_t tx_sighash, uint32_t flags,
+                                unsigned char *bytes_out, size_t len)
+{
+    return tx_get_signature_hash(tx, index, script, script_len,
+                                 extra, extra_len, extra_offset, satoshi,
+                                 NULL, 0, sighash, tx_sighash, flags, bytes_out, len);
+}
+
+int wally_tx_get_btc_signature_hash(const struct wally_tx *tx, size_t index,
+                                    const unsigned char *script, size_t script_len,
+                                    uint64_t satoshi, uint32_t sighash, uint32_t flags,
+                                    unsigned char *bytes_out, size_t len)
+{
+    return wally_tx_get_signature_hash(tx, index, script, script_len,
+                                       NULL, 0, 0, satoshi, sighash, sighash,
+                                       flags, bytes_out, len);
+}
+
 static int tx_get_taproot_signature_hash(
     const struct wally_tx *tx, size_t index, const struct wally_map *scripts,
     const uint64_t *values, size_t num_values,
     const unsigned char *tapleaf_script, size_t tapleaf_script_len,
     uint32_t key_version, uint32_t codesep_position,
-    uint32_t sighash, uint32_t tx_sighash,
     const unsigned char *annex, size_t annex_len,
+    uint32_t sighash, uint32_t flags,
     unsigned char *bytes_out, size_t len)
 {
     unsigned char buff[TX_STACK_SIZE], *buff_p = buff;
@@ -3168,10 +3191,13 @@ static int tx_get_taproot_signature_hash(
     int ret;
     const bool is_bip143 = false, is_bip341 = true, have_extensions = tapleaf_script != NULL;
     const struct tx_serialize_opts opts = {
-        sighash, tx_sighash, index, NULL, 0, values[index],
+        sighash, sighash, index, NULL, 0, values[index],
         is_bip143, NULL, 0, is_bip341, have_extensions, values, num_values, scripts,
         tapleaf_script, tapleaf_script_len, key_version, codesep_position, annex, annex_len
     };
+
+    if (flags)
+        return WALLY_EINVAL;
 
     /* Serialize sighash data into buffer. It allocates onto heap when it needs a larger
      * buffer to compute hash sub-parts.
@@ -3203,28 +3229,6 @@ fail:
     return ret;
 }
 
-int wally_tx_get_signature_hash(const struct wally_tx *tx,
-                                size_t index,
-                                const unsigned char *script, size_t script_len,
-                                const unsigned char *extra, size_t extra_len,
-                                uint32_t extra_offset, uint64_t satoshi,
-                                uint32_t sighash, uint32_t tx_sighash, uint32_t flags,
-                                unsigned char *bytes_out, size_t len)
-{
-    return tx_get_signature_hash(tx, index, script, script_len,
-                                 extra, extra_len, extra_offset, satoshi,
-                                 NULL, 0, sighash, tx_sighash, flags, bytes_out, len);
-}
-
-int wally_tx_get_btc_signature_hash(const struct wally_tx *tx, size_t index,
-                                    const unsigned char *script, size_t script_len,
-                                    uint64_t satoshi, uint32_t sighash, uint32_t flags,
-                                    unsigned char *bytes_out, size_t len)
-{
-    return wally_tx_get_signature_hash(tx, index, script, script_len,
-                                       NULL, 0, 0, satoshi, sighash, sighash,
-                                       flags, bytes_out, len);
-}
 
 int wally_tx_get_btc_taproot_signature_hash(const struct wally_tx *tx,
                                             size_t index,
@@ -3242,10 +3246,11 @@ int wally_tx_get_btc_taproot_signature_hash(const struct wally_tx *tx,
                                             unsigned char *bytes_out,
                                             size_t len)
 {
-    if (flags)
-        return WALLY_EINVAL;
-    return tx_get_taproot_signature_hash(tx, index, scripts, values, num_values, tapleaf_script, tapleaf_script_len,
-        key_version, codesep_position, sighash, sighash, annex, annex_len, bytes_out, len);
+    return tx_get_taproot_signature_hash(tx, index, scripts, values, num_values,
+                                         tapleaf_script, tapleaf_script_len,
+                                         key_version, codesep_position,
+                                         annex, annex_len, sighash, flags,
+                                         bytes_out, len);
 }
 
 int wally_tx_get_elements_signature_hash(const struct wally_tx *tx,
