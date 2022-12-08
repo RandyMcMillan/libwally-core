@@ -32,6 +32,8 @@ static const unsigned char DUMMY_SIG[EC_SIGNATURE_DER_MAX_LEN + 1]; /* +1 for si
 
 #define MAX_INVALID_SATOSHI ((uint64_t) -1)
 
+#define EXT_FLAG_BIP342 0x1 /* Indicates BIP342 tapscript message extension */
+
 /* Extra options when serializing for hashing */
 struct tx_serialize_opts
 {
@@ -45,7 +47,7 @@ struct tx_serialize_opts
     const unsigned char *value;      /* Confidential value of the input we are signing */
     size_t value_len;                /* length of 'value' in bytes */
     bool bip341;                     /* Serialize for BIP341 taproot hash */
-    bool tapscript_extensions;       /* Serialize for BIP342 tapscript hash */
+    unsigned char ext_flag;          /* 1 = serialize for BIP342 tapscript hash */
     const uint64_t *prev_satoshis;   /* Output amounts for BIP341/342 sha_amounts */
     size_t num_prev_satoshis;        /* Number of items in prev_satoshis */
     const struct wally_map *scripts; /* Output scripts for BIP341/342 sha_scriptpubkeys  */
@@ -2138,7 +2140,7 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
 #endif
 
     /* We allow BIP341/342 and BIP118 key versions */
-    if (opts->key_version > 0x01)
+    if (opts->key_version > 0x1)
         return WALLY_EINVAL;
 
     /* Note we assume tx_to_bytes has already validated all inputs */
@@ -2295,7 +2297,7 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
      * ext_flag*2 + annex_present
      */
 
-    p += uint8_to_le_bytes((opts->tapscript_extensions ? 1*2 : 0*2) + has_annex, p);
+    p += uint8_to_le_bytes(opts->ext_flag * 2 + has_annex, p);
 
     if (sh_anyonecanpay || sh_anyprevout) {
        const struct wally_map_item *script = wally_map_get_integer(opts->scripts, opts->index);
@@ -2347,7 +2349,7 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
     }
 
     /* Tapscript Extensions */
-    if (opts->tapscript_extensions) {
+    if (opts->ext_flag == EXT_FLAG_BIP342) {
         if (!sh_anyprevout_anyscript) {
             /* tapleaf_hash (32)
              * hash_TapLeaf(v || compact_size(size of s) || s)
@@ -2367,6 +2369,9 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
 
         /* codesep_pos (4) */
         p += uint32_to_le_bytes(opts->codesep_position, p);
+    } else if (opts->ext_flag) {
+        ret = WALLY_ERROR; /* Unknown extension flag */
+        goto error;
     }
 
     *written = p - bytes_out;
@@ -3094,15 +3099,15 @@ static int tx_get_signature_hash(const struct wally_tx *tx,
                                  uint32_t sighash, uint32_t tx_sighash, uint32_t flags,
                                  unsigned char *bytes_out, size_t len)
 {
-    unsigned char buff[TX_STACK_SIZE], *buff_p = buff;
+    unsigned char buff[TX_STACK_SIZE], *buff_p = buff, ext_flag = 0;
     size_t n, n2;
     size_t is_elements = 0;
     const bool is_bip143 = (flags & WALLY_TX_FLAG_USE_WITNESS) ? true : false;
-    const bool is_bip341 = false, have_extensions = false;
+    const bool is_bip341 = false;
     int ret;
     const struct tx_serialize_opts opts = {
         sighash, tx_sighash, index, script, script_len, satoshi,
-        is_bip143, value, value_len, is_bip341, have_extensions, NULL, 0, NULL,
+        is_bip143, value, value_len, is_bip341, ext_flag, NULL, 0, NULL,
         NULL, 0, 0, 0, NULL, 0
     };
 
@@ -3176,13 +3181,13 @@ int wally_tx_get_btc_signature_hash(const struct wally_tx *tx, size_t index,
                                        flags, bytes_out, len);
 }
 
-static size_t get_bip341_size(uint32_t sighash, bool have_annex, bool have_tapleaf_script)
+static size_t get_bip341_size(uint32_t sighash, bool have_annex, unsigned char ext_flag)
 {
     const bool sh_anyonecanpay = sighash & WALLY_SIGHASH_ANYONECANPAY;
     const bool sh_none = (sighash & WALLY_SIGHASH_MASK) == WALLY_SIGHASH_NONE;
     /* See BIP341/342/118. Note the leading 1 for the sighash epoc byte */
     return 1 + 174 - sh_anyonecanpay * 49 - sh_none * 32 +
-           have_annex * 32 + have_tapleaf_script * 37;
+           have_annex * 32 + (ext_flag == EXT_FLAG_BIP342 ? 37 : 0);
 }
 
 static int tx_get_taproot_signature_hash(
@@ -3195,11 +3200,12 @@ static int tx_get_taproot_signature_hash(
     unsigned char *bytes_out, size_t len)
 {
     unsigned char buff[TX_STACK_SIZE];
-    const bool is_bip143 = false, is_bip341 = true, have_extensions = tapleaf_script != NULL;
+    const bool is_bip143 = false, is_bip341 = true;
     const struct tx_serialize_opts opts = {
         sighash, sighash, index, NULL, 0, values[index],
-        is_bip143, NULL, 0, is_bip341, have_extensions, values, num_values, scripts,
-        tapleaf_script, tapleaf_script_len, key_version, codesep_position, annex, annex_len
+        is_bip143, NULL, 0, is_bip341, tapleaf_script ? EXT_FLAG_BIP342 : 0,
+        values, num_values, scripts, tapleaf_script, tapleaf_script_len,
+        key_version, codesep_position, annex, annex_len
     };
     size_t is_elements = 0, n;
     int ret;
@@ -3209,7 +3215,7 @@ static int tx_get_taproot_signature_hash(
 
     ret = tx_to_bytes(tx, &opts, 0, buff, sizeof(buff), &n, is_elements != 0);
     if (ret == WALLY_OK) {
-        const size_t tx_size = get_bip341_size(sighash, !!annex, have_extensions);
+        const size_t tx_size = get_bip341_size(sighash, !!annex, opts.ext_flag);
         /* FIXME No size checks for BIP118 yet */
         if (key_version == 0x00 && n != tx_size)
             ret = WALLY_ERROR;
