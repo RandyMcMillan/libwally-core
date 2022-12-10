@@ -2117,7 +2117,7 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
 {
     unsigned char buff[TX_STACK_SIZE / 2], *buff_p = buff;
     size_t i, prevouts_size, outputs_size, buff_len = sizeof(buff);
-    size_t is_elements = 0;
+    size_t is_elements;
     const unsigned char sighash = opts ? opts->sighash : 0;
     size_t scripts_size = 0, running_scripts_size = 0; /* sha_scriptpubkeys */
     bool has_annex = opts->annex != NULL;
@@ -2135,8 +2135,8 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
     (void)sh_rangeproof;
 
 #ifdef BUILD_ELEMENTS
-    if ((ret = wally_tx_is_elements(tx, &is_elements)) != WALLY_OK)
-        return ret;
+    if ((ret = wally_tx_is_elements(tx, &is_elements)) != WALLY_OK || is_elements)
+        return WALLY_EINVAL;
 #endif
 
     /* We allow BIP341/342 and BIP118 key versions */
@@ -2198,22 +2198,15 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
     if (sh_none)
         outputs_size = 0;
     else if (sh_single) {
-        if (!is_elements)
-            outputs_size = sizeof(uint64_t) +
-                           varbuff_get_length(tx->outputs[opts->index].script_len);
-        else
-            return WALLY_EINVAL;
+        outputs_size = sizeof(uint64_t);
+        outputs_size += varbuff_get_length(tx->outputs[opts->index].script_len);
     } else {
         outputs_size = 0;
         for (i = 0; i < tx->num_outputs; ++i) {
-            if (!is_elements)
-                outputs_size += sizeof(uint64_t);
-            else
-                return WALLY_EINVAL;
+            outputs_size += sizeof(uint64_t);
             outputs_size += varbuff_get_length(tx->outputs[i].script_len);
         }
     }
-
 
     /* Allocate a larger buffer in heap if necessary based on sha_* hashing fields sizes */
     if (prevouts_size > buff_len || outputs_size > buff_len || scripts_size > buff_len ||
@@ -3207,13 +3200,18 @@ static int tx_get_taproot_signature_hash(
         values, num_values, scripts, tapleaf_script, tapleaf_script_len,
         key_version, codesep_position, annex, annex_len
     };
-    size_t is_elements = 0, n;
+    size_t is_elements, n;
     int ret;
 
     if (flags)
         return WALLY_EINVAL;
 
-    ret = tx_to_bytes(tx, &opts, 0, buff, sizeof(buff), &n, is_elements != 0);
+#ifdef BUILD_ELEMENTS
+    if ((ret = wally_tx_is_elements(tx, &is_elements)) != WALLY_OK || is_elements)
+        return WALLY_EINVAL;
+#endif
+
+    ret = tx_to_bytes(tx, &opts, 0, buff, sizeof(buff), &n, false);
     if (ret == WALLY_OK) {
         const size_t tx_size = get_bip341_size(sighash, !!annex, opts.ext_flag);
         /* FIXME No size checks for BIP118 yet */
