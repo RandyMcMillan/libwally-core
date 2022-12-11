@@ -1603,6 +1603,15 @@ static int get_txin_issuance_size(const struct wally_tx_input *input,
     return WALLY_OK;
 }
 
+static size_t get_bip341_size(uint32_t sighash, bool have_annex, unsigned char ext_flag)
+{
+    const bool sh_anyonecanpay = sighash & WALLY_SIGHASH_ANYONECANPAY;
+    const bool sh_none = (sighash & WALLY_SIGHASH_MASK) == WALLY_SIGHASH_NONE;
+    /* See BIP341/342/118. Note the leading 1 for the sighash epoc byte */
+    return 1 + 174 - sh_anyonecanpay * 49 - sh_none * 32 +
+           have_annex * 32 + (ext_flag == EXT_FLAG_BIP342 ? 37 : 0);
+}
+
 /* We compute the size of the witness separately so we can compute vsize
  * without iterating the transaction twice with different flags.
  */
@@ -1618,6 +1627,8 @@ static int tx_get_lengths(const struct wally_tx *tx,
     const bool sh_none = (sighash & WALLY_SIGHASH_MASK) == WALLY_SIGHASH_NONE;
     const bool sh_single = (sighash & WALLY_SIGHASH_MASK) == WALLY_SIGHASH_SINGLE;
 
+    *base_size = 0;
+    *witness_size = 0;
     *witness_count = 0;
 
     if (!is_valid_tx(tx))
@@ -1626,6 +1637,13 @@ static int tx_get_lengths(const struct wally_tx *tx,
     if (opts) {
         if (flags & WALLY_TX_FLAG_USE_WITNESS)
             return WALLY_ERROR; /* Segwit tx hashing uses bip143 opts member */
+
+        if (opts->bip341) {
+            *base_size = get_bip341_size(opts->tx_sighash, opts->annex_len != 0,
+                                         opts->ext_flag);
+            *witness_size = 0;
+            return WALLY_OK;
+        }
 
         if (opts->bip143) {
             size_t issuance_size, amount_size = sizeof(uint64_t);
@@ -1783,21 +1801,21 @@ static int tx_get_length(const struct wally_tx *tx,
                          size_t *written, bool is_elements)
 {
     size_t base_size, witness_size, witness_count;
+    int ret;
 
     if (written)
         *written = 0;
-
-    if (!written ||
-        tx_get_lengths(tx, opts, flags, &base_size, &witness_size,
-                       &witness_count, is_elements) != WALLY_OK)
+    if (!written)
         return WALLY_EINVAL;
-
-    if (witness_count && (flags & WALLY_TX_FLAG_USE_WITNESS))
-        *written = base_size + witness_size;
-    else
-        *written = base_size;
-
-    return WALLY_OK;
+    ret = tx_get_lengths(tx, opts, flags, &base_size, &witness_size,
+                         &witness_count, is_elements);
+    if (ret == WALLY_OK) {
+        if (witness_count && (flags & WALLY_TX_FLAG_USE_WITNESS))
+            *written = base_size + witness_size;
+        else
+            *written = base_size;
+    }
+    return ret;
 }
 
 int wally_tx_get_length(const struct wally_tx *tx, uint32_t flags,
@@ -3174,15 +3192,6 @@ int wally_tx_get_btc_signature_hash(const struct wally_tx *tx, size_t index,
                                        flags, bytes_out, len);
 }
 
-static size_t get_bip341_size(uint32_t sighash, bool have_annex, unsigned char ext_flag)
-{
-    const bool sh_anyonecanpay = sighash & WALLY_SIGHASH_ANYONECANPAY;
-    const bool sh_none = (sighash & WALLY_SIGHASH_MASK) == WALLY_SIGHASH_NONE;
-    /* See BIP341/342/118. Note the leading 1 for the sighash epoc byte */
-    return 1 + 174 - sh_anyonecanpay * 49 - sh_none * 32 +
-           have_annex * 32 + (ext_flag == EXT_FLAG_BIP342 ? 37 : 0);
-}
-
 static int tx_get_taproot_signature_hash(
     const struct wally_tx *tx, size_t index, const struct wally_map *scripts,
     const uint64_t *values, size_t num_values,
@@ -3200,10 +3209,10 @@ static int tx_get_taproot_signature_hash(
         values, num_values, scripts, tapleaf_script, tapleaf_script_len,
         key_version, codesep_position, annex, annex_len
     };
-    size_t is_elements, n;
+    size_t is_elements, n, n2;
     int ret;
 
-    if (flags)
+    if (flags || !bytes_out || len != SHA256_LEN)
         return WALLY_EINVAL;
 
 #ifdef BUILD_ELEMENTS
@@ -3211,16 +3220,20 @@ static int tx_get_taproot_signature_hash(
         return WALLY_EINVAL;
 #endif
 
-    ret = tx_to_bytes(tx, &opts, 0, buff, sizeof(buff), &n, false);
+    if ((ret = tx_get_length(tx, &opts, 0, &n, false)) != WALLY_OK)
+        return WALLY_EINVAL;
+
+    if (n > sizeof(buff))
+        return WALLY_ERROR; /* Will never happen unless buff size is reduced */
+
+    ret = tx_to_bytes(tx, &opts, 0, buff, sizeof(buff), &n2, false);
     if (ret == WALLY_OK) {
-        const size_t tx_size = get_bip341_size(sighash, !!annex, opts.ext_flag);
-        /* FIXME No size checks for BIP118 yet */
-        if (key_version == 0x00 && n != tx_size)
-            ret = WALLY_ERROR;
+        if (n != n2)
+            ret = WALLY_ERROR; /* tx_get_length/tx_to_bytes mismatch, should not happen! */
         else
             ret = wally_bip340_tagged_hash(buff, n, "TapSighash", bytes_out, len);
     }
-    wally_clear(buff, sizeof(buff));
+    wally_clear(buff, n);
     return ret;
 }
 
