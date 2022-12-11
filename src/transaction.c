@@ -2227,16 +2227,12 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
     }
 
     /* Allocate a larger buffer in heap if necessary based on sha_* hashing fields sizes */
-    if (prevouts_size > buff_len || outputs_size > buff_len || scripts_size > buff_len ||
-        opts->tapleaf_script_len > buff_len) {
-        buff_len = prevouts_size > buff_len ? prevouts_size : buff_len;
-        buff_len = outputs_size  > buff_len ? prevouts_size : buff_len;
-        buff_len = scripts_size  > buff_len ? scripts_size  : buff_len;
-        buff_len = opts->tapleaf_script_len > buff_len ? opts->tapleaf_script_len : buff_len;
-        buff_p = wally_malloc(buff_len);
-        if (buff_p == NULL)
-            return WALLY_ENOMEM;
-    }
+    buff_len = prevouts_size > buff_len ? prevouts_size : buff_len;
+    buff_len = outputs_size  > buff_len ? outputs_size : buff_len;
+    buff_len = scripts_size  > buff_len ? scripts_size  : buff_len;
+    buff_len = opts->tapleaf_script_len > buff_len ? opts->tapleaf_script_len : buff_len;
+    if (buff_len > sizeof(buff) && !(buff_p = wally_malloc(buff_len)))
+        return WALLY_ENOMEM;
 
     if (!sh_anyonecanpay && !sh_anyprevout) {
         /* sha_prevouts */
