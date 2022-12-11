@@ -268,9 +268,9 @@ class TransactionTests(unittest.TestCase):
         with open(root_dir + 'src/data/bip341_vectors.json', 'r') as f:
             cases = json.load(f)
 
-        keyspend_case = cases["keyPathSpending"][0]
-        input_spending = keyspend_case["inputSpending"]
-        utxos = keyspend_case["given"]["utxosSpent"]
+        keyspend_case = cases['keyPathSpending'][0]
+        input_spending = keyspend_case['inputSpending']
+        utxos = keyspend_case['given']['utxosSpent']
         num_utxos = len(utxos)
 
         scripts = pointer(wally_map())
@@ -279,17 +279,17 @@ class TransactionTests(unittest.TestCase):
         num_values = num_utxos
 
         for i, utxo in enumerate(utxos):
-            script, script_len = make_cbuffer(utxo["scriptPubKey"])
+            script, script_len = make_cbuffer(utxo['scriptPubKey'])
             wally_map_add_integer(scripts, i, script, script_len)
-            values[i] = int(utxo["amountSats"])
+            values[i] = int(utxo['amountSats'])
 
-        tx = self.tx_deserialize_hex(keyspend_case["given"]["rawUnsignedTx"])
+        tx = self.tx_deserialize_hex(keyspend_case['given']['rawUnsignedTx'])
         bytes_out, out_len = make_cbuffer('00'*32)
 
         for input_index in range(len(input_spending)):
-            sighash = input_spending[input_index]["given"]["hashType"]
-            index = input_spending[input_index]["given"]["txinIndex"]
-            expected = utf8(input_spending[input_index]["intermediary"]["sigHash"])
+            sighash = input_spending[input_index]['given']['hashType']
+            index = input_spending[input_index]['given']['txinIndex']
+            expected = utf8(input_spending[input_index]['intermediary']['sigHash'])
 
             # Unused in these tests
             tapleaf_script = None
