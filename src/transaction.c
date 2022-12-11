@@ -3200,7 +3200,8 @@ static int tx_get_taproot_signature_hash(
     unsigned char buff[TX_STACK_SIZE];
     const bool is_bip143 = false, is_bip341 = true;
     const struct tx_serialize_opts opts = {
-        sighash, sighash, index, NULL, 0, values[index],
+        sighash, sighash, index, NULL, 0,
+        values && index < num_values ? values[index] : 0,
         is_bip143, NULL, 0, is_bip341, tapleaf_script ? EXT_FLAG_BIP342 : 0,
         values, num_values, scripts, tapleaf_script, tapleaf_script_len,
         key_version, codesep_position, annex, annex_len
