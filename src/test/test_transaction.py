@@ -305,21 +305,50 @@ class TransactionTests(unittest.TestCase):
                     key_version, codesep_pos, annex, annex_len, sighash, 0, bytes_out, out_len]
 
             self.assertEqual(wally_tx_get_btc_taproot_signature_hash(*args), WALLY_OK)
+            self.assertEqual(out_len, 32)
             self.assertEqual(expected, h(bytes_out[:out_len]))
 
-            # Un-verified sighash for BIP342, just to catch obvious user errors
-            tapleaf_script, tapleaf_script_len = make_cbuffer('00')
-            args[5] = tapleaf_script
-            args[6] = tapleaf_script_len
-            self.assertEqual(wally_tx_get_btc_taproot_signature_hash(*args), WALLY_OK)
+        empty_scripts = pointer(wally_map())
+        fake_script, fake_script_len = make_cbuffer('00')
+        fake_annex, fake_annex_len = make_cbuffer('5000')
+        bad_annex, bad_annex_len = make_cbuffer('00')
 
-            codesep_pos = 0x00000001
-            args[8] = codesep_pos
-            self.assertEqual(wally_tx_get_btc_taproot_signature_hash(*args), WALLY_OK)
+        # Test that signing with a provided tapleaf script/annex works
+        args[5] = fake_script
+        args[6] = fake_script_len
+        self.assertEqual(wally_tx_get_btc_taproot_signature_hash(*args), WALLY_OK)
+        args[9] = fake_annex
+        args[10] = fake_annex_len
+        self.assertEqual(wally_tx_get_btc_taproot_signature_hash(*args), WALLY_OK)
 
-            key_version = 2 # Only 0 and 1 are allowed
-            args[7] = key_version
-            self.assertEqual(wally_tx_get_btc_taproot_signature_hash(*args), WALLY_EINVAL)
+        # Invalid args
+        invalid_cases = [
+            [(0,  None)],            # NULL tx
+            [(1,  50)],              # Invalid index
+            [(2,  None)],            # NULL scripts
+            [(2,  empty_scripts)],   # Missing script(s)
+            [(3,  None)],            # NULL values
+            [(4,  0)],               # Missing values
+            [(4,  1)],               # Too few values
+            [(5,  fake_script)],     # Zero-length tapleaf script
+            [(6,  fake_script_len)], # NULL tapleaf script
+            [(7,  2)],               # Invalid key version (only 0/1 are allowed)
+            [(9,  fake_annex)],      # Zero length annex
+            [(10, fake_annex_len)],  # NULL annex
+            [(9,  bad_annex), (10, bad_annex_len)], # Missing 0x50 annex prefix
+            [(11, 0xffffffff)],      # Invalid sighash
+            [(12, 0x1)],             # Unknown flag(s)
+            [(13, None)],            # NULL output
+            [(14, 0)],               # Zero length output
+            [(14, 33)],              # Incorrect length output
+        ]
+        for case in invalid_cases:
+            args = [tx, index, scripts, values, num_values, tapleaf_script, tapleaf_script_len,
+                    key_version, codesep_pos, annex, annex_len, sighash, 0, bytes_out, out_len]
+            for i, arg in case:
+                args[i] = arg
+            ret = wally_tx_get_btc_taproot_signature_hash(*args)
+            self.assertEqual(ret, WALLY_EINVAL)
 
 
 if __name__ == '__main__':
