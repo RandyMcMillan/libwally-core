@@ -3209,7 +3209,10 @@ static int tx_get_taproot_signature_hash(
     size_t is_elements, n, n2;
     int ret;
 
-    if (flags || !bytes_out || len != SHA256_LEN)
+    if (!values || !num_values || index >= num_values ||
+        BYTES_INVALID(tapleaf_script, tapleaf_script_len) ||
+        BYTES_INVALID(annex, annex_len) || (annex && *annex != 0x50) ||
+        flags || !bytes_out || len != SHA256_LEN)
         return WALLY_EINVAL;
 
 #ifdef BUILD_ELEMENTS
