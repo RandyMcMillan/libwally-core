@@ -2279,8 +2279,9 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
 
     if (sh_anyonecanpay || sh_anyprevout) {
        const struct wally_map_item *script = wally_map_get_integer(opts->scripts, opts->index);
-        if (!script || !script->value || script->value_len != WALLY_SCRIPTPUBKEY_P2TR_LEN) {
-            ret = WALLY_EINVAL;
+        if (!script || !script->value || script->value_len != WALLY_SCRIPTPUBKEY_P2TR_LEN ||
+            script->value[0] != OP_1 || script->value[1] != 32u) {
+            ret = WALLY_EINVAL; /* Not a v1 segwit taproot script */
             goto error;
         }
         if (sh_anyonecanpay) {
