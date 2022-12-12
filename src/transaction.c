@@ -2134,15 +2134,13 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
                                      size_t *written)
 {
     unsigned char buff[TX_STACK_SIZE / 2], *buff_p = buff;
-    size_t i, prevouts_size, outputs_size, scripts_size, buff_len = sizeof(buff);
-    size_t is_elements;
-    const unsigned char sighash = opts ? opts->sighash : 0;
-    bool has_annex = opts->annex != NULL;
-    const bool sh_none = (sighash & WALLY_SIGHASH_MASK) == WALLY_SIGHASH_NONE;
-    const bool sh_single = (sighash & WALLY_SIGHASH_MASK) == WALLY_SIGHASH_SINGLE;
-    const bool sh_anyonecanpay = tr_is_input_hash_type(sighash, WALLY_SIGHASH_ANYONECANPAY);
-    const bool sh_anyprevout = tr_is_input_hash_type(sighash, WALLY_SIGHASH_ANYPREVOUT);
-    const bool sh_anyprevout_anyscript = tr_is_input_hash_type(sighash, WALLY_SIGHASH_ANYPREVOUTANYSCRIPT);
+    size_t i, is_elements, sub_size, buff_len = sizeof(buff);
+    const bool has_annex = opts->annex != NULL;
+    const bool sh_none = (opts->sighash & WALLY_SIGHASH_MASK) == WALLY_SIGHASH_NONE;
+    const bool sh_single = (opts->sighash & WALLY_SIGHASH_MASK) == WALLY_SIGHASH_SINGLE;
+    const bool sh_anyonecanpay = tr_is_input_hash_type(opts->sighash, WALLY_SIGHASH_ANYONECANPAY);
+    const bool sh_anyprevout = tr_is_input_hash_type(opts->sighash, WALLY_SIGHASH_ANYPREVOUT);
+    const bool sh_anyprevout_anyscript = tr_is_input_hash_type(opts->sighash, WALLY_SIGHASH_ANYPREVOUTANYSCRIPT);
     unsigned char *p = bytes_out, *tmp_p;
     int ret = WALLY_OK;
 
@@ -2189,34 +2187,36 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
     p += uint32_to_le_bytes(tx->locktime, p); /* nLockTime (4) */
 
     /* Compute the sizes needed for prevouts/scripts/output sub-hashes */
-    prevouts_size = tx->num_inputs * (WALLY_TXHASH_LEN + sizeof(uint32_t));
-    scripts_size = 0;
+    sub_size = tx->num_inputs * (WALLY_TXHASH_LEN + sizeof(uint32_t));
+    buff_len = sub_size > buff_len ? sub_size : buff_len;
+
+    sub_size = 0;
     for (i = 0; i < tx->num_inputs; ++i) {
         const struct wally_map_item *script = wally_map_get_integer(opts->scripts, i);
-        if (!script) {
+        if (!script || !script->value || !script->value_len) {
             ret = WALLY_EINVAL; /* Missing script */
             goto error;
         }
-        scripts_size += varbuff_get_length(script->value_len);
+        sub_size += varbuff_get_length(script->value_len);
     }
+    buff_len = sub_size  > buff_len ? sub_size  : buff_len;
 
     if (sh_none)
-        outputs_size = 0;
+        sub_size = 0;
     else if (sh_single) {
-        outputs_size = sizeof(uint64_t);
-        outputs_size += varbuff_get_length(tx->outputs[opts->index].script_len);
+        sub_size = sizeof(uint64_t);
+        sub_size += varbuff_get_length(tx->outputs[opts->index].script_len);
     } else {
-        outputs_size = 0;
+        sub_size = 0;
         for (i = 0; i < tx->num_outputs; ++i) {
-            outputs_size += sizeof(uint64_t);
-            outputs_size += varbuff_get_length(tx->outputs[i].script_len);
+            sub_size += sizeof(uint64_t);
+            sub_size += varbuff_get_length(tx->outputs[i].script_len);
         }
     }
+    buff_len = sub_size  > buff_len ? sub_size : buff_len;
 
-    buff_len = prevouts_size > buff_len ? prevouts_size : buff_len;
-    buff_len = outputs_size  > buff_len ? outputs_size : buff_len;
-    buff_len = scripts_size  > buff_len ? scripts_size  : buff_len;
     buff_len = opts->tapleaf_script_len > buff_len ? opts->tapleaf_script_len : buff_len;
+
     /* Allocate a larger buffer if needed to hold our sub-hashes data */
     if (buff_len > sizeof(buff) && !(buff_p = wally_malloc(buff_len)))
         return WALLY_ENOMEM;
@@ -2252,11 +2252,11 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
         p += SHA256_LEN;
 
         /* sha_sequences */
+        tmp_p = buff_p;
         for (i = 0; i < tx->num_inputs; ++i)
-            uint32_to_le_bytes(tx->inputs[i].sequence, buff_p + i * sizeof(uint32_t));
+            tmp_p += uint32_to_le_bytes(tx->inputs[i].sequence, tmp_p);
 
-        ret = wally_sha256(buff_p, tx->num_inputs * sizeof(uint32_t), p, SHA256_LEN);
-        if (ret != WALLY_OK)
+        if ((ret = wally_sha256(buff_p, tmp_p - buff_p, p, SHA256_LEN)) != WALLY_OK)
             goto error;
         p += SHA256_LEN;
     }
