@@ -277,10 +277,18 @@ class TransactionTests(unittest.TestCase):
         wally_map_init_alloc(num_utxos, None, scripts)
         values = (c_uint64 * num_utxos)()
         num_values = num_utxos
+        # Bad/Faked data for invalid parameter checks
+        empty_scripts = pointer(wally_map())
+        non_tr_scripts = pointer(wally_map())
+        wally_map_init_alloc(num_utxos, None, non_tr_scripts)
+        fake_script, fake_script_len = make_cbuffer('00')
+        fake_annex, fake_annex_len = make_cbuffer('5000')
+        bad_annex, bad_annex_len = make_cbuffer('00')
 
         for i, utxo in enumerate(utxos):
             script, script_len = make_cbuffer(utxo['scriptPubKey'])
             wally_map_add_integer(scripts, i, script, script_len)
+            wally_map_add_integer(non_tr_scripts, i, fake_script, fake_script_len)
             values[i] = int(utxo['amountSats'])
 
         tx = self.tx_deserialize_hex(keyspend_case['given']['rawUnsignedTx'])
@@ -308,11 +316,6 @@ class TransactionTests(unittest.TestCase):
             self.assertEqual(out_len, 32)
             self.assertEqual(expected, h(bytes_out[:out_len]))
 
-        empty_scripts = pointer(wally_map())
-        fake_script, fake_script_len = make_cbuffer('00')
-        fake_annex, fake_annex_len = make_cbuffer('5000')
-        bad_annex, bad_annex_len = make_cbuffer('00')
-
         # Test that signing with a provided tapleaf script/annex works
         args[5] = fake_script
         args[6] = fake_script_len
@@ -331,6 +334,7 @@ class TransactionTests(unittest.TestCase):
             [(4,  0)],               # Missing values
             [(4,  1)],               # Too few values
             [(5,  fake_script)],     # Zero-length tapleaf script
+            [(5,  non_tr_scripts)],  # Non-taproot input script
             [(6,  fake_script_len)], # NULL tapleaf script
             [(7,  2)],               # Invalid key version (only 0/1 are allowed)
             [(9,  fake_annex)],      # Zero length annex
