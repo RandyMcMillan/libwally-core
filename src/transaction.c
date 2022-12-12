@@ -2134,10 +2134,9 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
                                      size_t *written)
 {
     unsigned char buff[TX_STACK_SIZE / 2], *buff_p = buff;
-    size_t i, prevouts_size, outputs_size, buff_len = sizeof(buff);
+    size_t i, prevouts_size, outputs_size, scripts_size, buff_len = sizeof(buff);
     size_t is_elements;
     const unsigned char sighash = opts ? opts->sighash : 0;
-    size_t scripts_size = 0, running_scripts_size = 0; /* sha_scriptpubkeys */
     bool has_annex = opts->annex != NULL;
     const bool sh_none = (sighash & WALLY_SIGHASH_MASK) == WALLY_SIGHASH_NONE;
     const bool sh_single = (sighash & WALLY_SIGHASH_MASK) == WALLY_SIGHASH_SINGLE;
@@ -2191,6 +2190,7 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
 
     /* Compute the sizes needed for prevouts/scripts/output sub-hashes */
     prevouts_size = tx->num_inputs * (WALLY_TXHASH_LEN + sizeof(uint32_t));
+    scripts_size = 0;
     for (i = 0; i < tx->num_inputs; ++i) {
         const struct wally_map_item *script = wally_map_get_integer(opts->scripts, i);
         if (!script) {
@@ -2242,16 +2242,12 @@ static inline int tx_to_bip341_bytes(const struct wally_tx *tx,
         p += SHA256_LEN;
 
         /* sha_scriptpubkeys */
+        tmp_p = buff_p;
         for (i = 0; i < tx->num_inputs; ++i) {
             const struct wally_map_item *script = wally_map_get_integer(opts->scripts, i);
-            running_scripts_size += varbuff_to_bytes(script->value, script->value_len,
-                                                     buff_p + running_scripts_size);
+            tmp_p += varbuff_to_bytes(script->value, script->value_len, tmp_p);
         }
-        if (running_scripts_size != scripts_size) {
-            ret = WALLY_EINVAL;
-            goto error;
-        }
-        if ((ret = wally_sha256(buff_p, running_scripts_size, p, SHA256_LEN)) != WALLY_OK)
+        if ((ret = wally_sha256(buff_p, tmp_p - buff_p, p, SHA256_LEN)) != WALLY_OK)
             goto error;
         p += SHA256_LEN;
 
